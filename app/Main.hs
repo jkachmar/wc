@@ -18,6 +18,7 @@ import SimpleBSFold
 import InlinedBSFold
 import MonoidBSFold
 import InlinedMonoidBSFold
+import UnboxedInlinedMonoidBSFold
 import Lazy
 import LazyUTFAgnostic
 import Strict
@@ -27,33 +28,26 @@ import FileSplit
 import FileSplitUTF
 import HandleSplitUTF
 
-import qualified UnboxedTypes as Unboxed
-import qualified GHC.Types as PrimTypes
-
--- printResult (name, Counts{charCount, wordCount, lineCount}) = printf "%d %d %d %s\n" lineCount (getFlux wordCount) charCount name
+printResult (name, Counts{charCount, wordCount, lineCount}) = printf "%d %d %d %s\n" lineCount (getFlux wordCount) charCount name
 
 main :: IO ()
 main = do
-  let int = Unboxed.isSpace# ('a'#)
-  print $ (show $ PrimTypes.I# int) ++ "#"
-
--- main :: IO ()
--- main = do
---     results <- getArgs >>= \case
---         ("handle-utf": filenames) -> handleSplitUTF filenames
---         ("lazy": filenames) -> lazyBytestream filenames
---         ("lazy-utf8": filenames) -> lazyUTF8 filenames
---         ("simple-bs-fold": filenames) -> simpleBSFold filenames
---         ("monoid-bs-fold": filenames) -> monoidBSFold filenames
---         ("inlined-monoid-bs-fold": filenames) -> inlinedMonoidBSFold filenames
---         ("inlined-bs-fold": filenames) -> inlinedBSFold filenames
---         ("stupid": filenames) -> stupid filenames
---         ("simple": filenames) -> simple filenames
---         ("simple-fold": filenames) -> simpleFold filenames
---         ("strict": filenames) -> strictBytestream filenames
---         ("parallel": filenames) -> parallelBytestream filenames
---         ("streaming": filenames) -> streamingBytestream filenames
---         ("split": filenames) -> filesplit filenames
---         ("split-utf": filenames) -> filesplitUTF filenames
---         _ -> hPutStrLn stderr "usage: <simple|lazy> [files...]" >> exitFailure
---     traverse_ printResult results
+    results <- getArgs >>= \case
+        ("handle-utf": filenames) -> handleSplitUTF filenames
+        ("lazy": filenames) -> lazyBytestream filenames
+        ("lazy-utf8": filenames) -> lazyUTF8 filenames
+        ("simple-bs-fold": filenames) -> simpleBSFold filenames
+        ("monoid-bs-fold": filenames) -> monoidBSFold filenames
+        ("inlined-monoid-bs-fold": filenames) -> inlinedMonoidBSFold filenames
+        ("inlined-bs-fold": filenames) -> inlinedBSFold filenames
+        ("inlined-unboxed-monoid-bs-fold": filenames) -> inlinedMonoidBSFold filenames
+        ("stupid": filenames) -> stupid filenames
+        ("simple": filenames) -> simple filenames
+        ("simple-fold": filenames) -> simpleFold filenames
+        ("strict": filenames) -> strictBytestream filenames
+        ("parallel": filenames) -> parallelBytestream filenames
+        ("streaming": filenames) -> streamingBytestream filenames
+        ("split": filenames) -> filesplit filenames
+        ("split-utf": filenames) -> filesplitUTF filenames
+        _ -> hPutStrLn stderr "usage: <simple|lazy> [files...]" >> exitFailure
+    traverse_ printResult results

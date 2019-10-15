@@ -1,14 +1,22 @@
 {-# language BangPatterns #-}
 {-# language MagicHash #-}
+{-# language RankNTypes #-}
+{-# language ScopedTypeVariables #-}
+{-# language UnboxedTuples #-}
 
 module UnboxedInlinedMonoidBSFold where
 
 import UnboxedTypes
 
+import qualified Types as BoxedTypes
+
 import Data.Traversable
-import Foreign (peek, plusPtr, withForeignPtr)
+import Foreign
+import GHC.Ptr
 import GHC.Prim
 import GHC.Types
+
+import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
@@ -16,16 +24,16 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Internal as LBSI
 import qualified Data.ByteString.Lazy.Char8 as LBS8
 
--- inlinedMonoidBSFold :: [FilePath] -> IO [(FilePath, _)]
--- inlinedMonoidBSFold paths = for paths $ \fp -> do
---   -- count <- countFile <$> BS.readFile fp
---   -- return (fp, count)
---   undefined
--- {-# INLINE inlinedMonoidBSFold #-}
+unboxedInlinedMonoidBSFold :: [FilePath] -> IO [(FilePath, BoxedTypes.Counts)]
+unboxedInlinedMonoidBSFold paths = for paths $ \fp -> do
+  bytes <- BS.readFile fp
+  let count = toBoxedCounts (countFile bytes)
+  return (fp, count)
+{-# INLINE unboxedInlinedMonoidBSFold #-}
 
--- countFile :: BS.ByteString -> Counts
--- countFile = BS.foldl' (\counts (C# char) -> counts `appendCounts` countChar char) EmptyCounts
--- {-# INLINE countFile #-}
+countFile :: BS.ByteString -> Counts
+countFile = unboxedStrictFoldlChar' (\counts char -> counts `appendCounts` countChar char) EmptyCounts
+{-# INLINE countFile #-}
 
 -------------------------------------------------------------------------
 -- Unboxed ByteString functions
@@ -33,22 +41,44 @@ import qualified Data.ByteString.Lazy.Char8 as LBS8
 -- | 'foldl'' is like 'foldl', but strict in the accumulator.
 -- 
 -- Lifted from Data.ByteString.Lazy and modified to work with unboxed types
-unboxedLazyFoldl' :: (a -> Char# -> a) -> a -> LBS.ByteString -> a
-unboxedLazyFoldl' f z = go z
+unboxedLazyFoldlChar' :: (Counts -> Char# -> Counts) -> Counts -> LBS.ByteString -> Counts
+unboxedLazyFoldlChar' f z = go z
   where go !a LBSI.Empty        = a
-        go !a (LBSI.Chunk c cs) = go (unboxedStrictFoldl' f a c) cs
-{-# INLINE unboxedLazyFoldl' #-}
+        go !a (LBSI.Chunk c cs) = go (unboxedStrictFoldlChar' f a c) cs
+{-# INLINE unboxedLazyFoldlChar' #-}
 
 -- | 'foldl'' is like 'foldl', but strict in the accumulator.
 --
 -- Lifted from Data.ByteString and modified to work with unboxed types
-unboxedStrictFoldl' :: (a# -> Char# -> a#) -> a# -> BS.ByteString -> a#
-unboxedStrictFoldl' f v (BSI.PS fp off len) =
-  BSI.accursedUnutterablePerformIO $ withForeignPtr fp $ \p ->
-    go v (p `plusPtr` off) (p `plusPtr` (off+len))
+unboxedStrictFoldlChar' :: (Counts -> Char# -> Counts) -> Counts -> BS.ByteString -> Counts
+unboxedStrictFoldlChar' f counts (BSI.PS fp offset len) =
+  let 
+    action = \initialState -> 
+      withForeignPtrCounts# initialState fp $ \state ptr ->
+        go state counts (ptr `plusPtr` offset) (ptr `plusPtr` (offset + len))
+  in 
+    -- This is basically accursedUnutterablePerformIO
+    case action realWorld# of
+    (# _, result #) -> result
   where
     -- tail recursive; traverses array left to right
-    go !z !p !q | p == q    = return z
-                | otherwise = do x <- peek p
-                                 go (f z x) (p `plusPtr` 1) q
-{-# INLINE unboxedStrictFoldl' #-}
+    go :: State# RealWorld -> Counts -> Ptr Char -> Ptr Char -> (# State# RealWorld, Counts #)
+    go !state !z !ptr !q 
+      | ptr == q  = (# state, z #)
+      | otherwise =
+          let (IO !action) = peek ptr
+          in case action state of
+            (# newState, (C# char) #) -> go newState (f z char) (ptr `plusPtr` 1) q
+{-# INLINE unboxedStrictFoldlChar' #-}
+
+withForeignPtrCounts# 
+  :: State# RealWorld 
+  -> ForeignPtr a
+  -> (State# RealWorld -> Ptr a -> (# State# RealWorld, Counts #))
+  -> (# State# RealWorld, Counts #)
+withForeignPtrCounts# state fo f = 
+  let
+    (# newState, counts #) = f state (unsafeForeignPtrToPtr fo)
+    (IO !action) = touchForeignPtr fo
+  in case action newState of
+    (# newerState, _ #) -> (# newerState, counts #)

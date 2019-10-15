@@ -12,6 +12,8 @@
 
 module UnboxedTypes where
 
+import qualified Types as BoxedTypes
+
 import Data.Monoid
 import Data.Char
 
@@ -41,6 +43,10 @@ pattern NotSpace = (# | (# #) #)
 showCharType :: CharType -> String
 showCharType IsSpace = "IsSpace"
 showCharType NotSpace = "NotSpace"
+
+toBoxedCharType :: CharType -> BoxedTypes.CharType
+toBoxedCharType IsSpace = BoxedTypes.IsSpace
+toBoxedCharType NotSpace = BoxedTypes.NotSpace
 
 ------------------------------------------------------------------------
 -- Flux
@@ -89,6 +95,11 @@ flux c = case (isSpace# c) of
 
 getFlux :: Flux -> Int#
 getFlux (SomeFlux _ n _) = n
+
+toBoxedFlux :: Flux -> BoxedTypes.Flux
+toBoxedFlux UnknownFlux = BoxedTypes.Unknown
+toBoxedFlux (SomeFlux left n right) =
+  BoxedTypes.Flux (toBoxedCharType left) (I# n) (toBoxedCharType right)
 
 ------------------------------------------------------------------------
 -- Counts'
@@ -139,6 +150,14 @@ fromTuple (# cs, ws, ls #) =
 toTuple :: Counts -> (# Int#, Int#, Int# #)
 toTuple (MkCounts charCount wordCount lineCount) =
   (# lineCount, getFlux wordCount, charCount #)
+
+toBoxedCounts :: Counts -> BoxedTypes.Counts
+toBoxedCounts (MkCounts charCount wordCount lineCount) = 
+  BoxedTypes.Counts
+    { BoxedTypes.charCount = I# charCount
+    , BoxedTypes.wordCount = toBoxedFlux wordCount
+    , BoxedTypes.lineCount = I# lineCount
+    }
 
 ------------------------------------------------------------------------
 -- Unboxed Unicode Whitespace Checking
