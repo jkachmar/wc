@@ -28,6 +28,7 @@ dependencies:
 - unix
 - unix-bytestring
 - async
+- ghc-prim
 
 default-extensions:
 - StrictData
